@@ -1,0 +1,1933 @@
+# basic-usage: Basic Usage
+URL: /docs/basic-usage
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/basic-usage.mdx
+
+Getting started with Better Auth
+        
+***
+
+title: Basic Usage
+description: Getting started with Better Auth
+---------------------------------------------
+
+Better Auth provides built-in authentication support for:
+
+* **Email and password**
+* **Social provider (Google, GitHub, Apple, and more)**
+
+But also can easily be extended using plugins, such as: [username](/docs/plugins/username), [magic link](/docs/plugins/magic-link), [passkey](/docs/plugins/passkey), [email-otp](/docs/plugins/email-otp), and more.
+
+## Email & Password
+
+To enable email and password authentication:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+    emailAndPassword: {    // [!code highlight]
+        enabled: true // [!code highlight]
+    } // [!code highlight]
+})
+```
+
+### Sign Up
+
+To sign up a user you need to call the client method `signUp.email` with the user's information.
+
+```ts title="sign-up.ts"
+import { authClient } from "@/lib/auth-client"; //import the auth client // [!code highlight]
+
+const { data, error } = await authClient.signUp.email({
+        email, // user email address
+        password, // user password -> min 8 characters by default
+        name, // user display name
+        image, // User image URL (optional)
+        callbackURL: "/dashboard" // A URL to redirect to after the user verifies their email (optional)
+    }, {
+        onRequest: (ctx) => {
+            //show loading
+        },
+        onSuccess: (ctx) => {
+            //redirect to the dashboard or sign in page
+        },
+        onError: (ctx) => {
+            // display the error message
+            alert(ctx.error.message);
+        },
+});
+```
+
+By default, the users are automatically signed in after they successfully sign up. To disable this behavior you can set `autoSignIn` to `false`.
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+    emailAndPassword: {
+    	enabled: true,
+    	autoSignIn: false //defaults to true // [!code highlight]
+  },
+})
+```
+
+### Sign In
+
+To sign a user in, you can use the `signIn.email` function provided by the client.
+
+```ts title="sign-in"
+const { data, error } = await authClient.signIn.email({
+        /**
+         * The user email
+         */
+        email,
+        /**
+         * The user password
+         */
+        password,
+        /**
+         * A URL to redirect to after the user verifies their email (optional)
+         */
+        callbackURL: "/dashboard",
+        /**
+         * remember the user session after the browser is closed. 
+         * @default true
+         */
+        rememberMe: false
+}, {
+    //callbacks
+})
+```
+
+<Callout type="warn">
+  Always invoke client methods from the client side. Don't call them from the server.
+</Callout>
+
+### Server-Side Authentication
+
+To authenticate a user on the server, you can use the `auth.api` methods.
+
+```ts title="server.ts"
+import { auth } from "./auth"; // path to your Better Auth server instance
+
+const response = await auth.api.signInEmail({
+    body: {
+        email,
+        password
+    },
+    asResponse: true // returns a response object instead of data
+});
+```
+
+<Callout>
+  If the server cannot return a response object, you'll need to manually parse and set cookies. But for frameworks like Next.js we provide [a plugin](/docs/integrations/next#server-action-cookies) to handle this automatically
+</Callout>
+
+## Social Sign-On
+
+Better Auth supports multiple social providers, including Google, GitHub, Apple, Discord, and more. To use a social provider, you need to configure the ones you need in the `socialProviders` option on your `auth` object.
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+
+export const auth = betterAuth({
+    socialProviders: { // [!code highlight]
+        github: { // [!code highlight]
+            clientId: process.env.GITHUB_CLIENT_ID!, // [!code highlight]
+            clientSecret: process.env.GITHUB_CLIENT_SECRET!, // [!code highlight]
+        } // [!code highlight]
+    }, // [!code highlight]
+})
+```
+
+### Sign in with social providers
+
+To sign in using a social provider you need to call `signIn.social`. It takes an object with the following properties:
+
+```ts title="sign-in.ts"
+import { authClient } from "@/lib/auth-client"; //import the auth client // [!code highlight]
+
+await authClient.signIn.social({
+    /**
+     * The social provider ID
+     * @example "github", "google", "apple"
+     */
+    provider: "github",
+    /**
+     * A URL to redirect after the user authenticates with the provider
+     * @default "/"
+     */
+    callbackURL: "/dashboard", 
+    /**
+     * A URL to redirect if an error occurs during the sign in process
+     */
+    errorCallbackURL: "/error",
+    /**
+     * A URL to redirect if the user is newly registered
+     */
+    newUserCallbackURL: "/welcome",
+    /**
+     * disable the automatic redirect to the provider. 
+     * @default false
+     */
+    disableRedirect: true,
+});
+```
+
+You can also authenticate using `idToken` or `accessToken` from the social provider instead of redirecting the user to the provider's site. See social providers documentation for more details.
+
+## Signout
+
+To signout a user, you can use the `signOut` function provided by the client.
+
+```ts title="user-card.tsx"
+await authClient.signOut();
+```
+
+you can pass `fetchOptions` to redirect onSuccess
+
+```ts title="user-card.tsx" 
+await authClient.signOut({
+  fetchOptions: {
+    onSuccess: () => {
+      router.push("/login"); // redirect to login page
+    },
+  },
+});
+```
+
+## Session
+
+Once a user is signed in, you'll want to access the user session. Better Auth allows you easily to access the session data from the server and client side.
+
+### Client Side
+
+#### Use Session
+
+Better Auth provides a `useSession` hook to easily access session data on the client side. This hook is implemented using nanostore and has support for each supported framework and vanilla client, ensuring that any changes to the session (such as signing out) are immediately reflected in your UI.
+
+<Tabs items={["React", "Vue","Svelte", "Solid", "Vanilla"]} defaultValue="React">
+  <Tab value="React">
+    ```tsx title="user.tsx"
+    import { authClient } from "@/lib/auth-client" // import the auth client // [!code highlight] 
+
+    export function User(){
+
+        const { // [!code highlight]
+            data: session, // [!code highlight]
+            isPending, //loading state // [!code highlight]
+            error, //error object // [!code highlight]
+            refetch //refetch the session
+        } = authClient.useSession() // [!code highlight]
+
+        return (
+            //...
+        )
+    }
+    ```
+  </Tab>
+
+  <Tab value="Vue">
+    ```vue title="index.vue"
+    <script setup lang="ts">
+    import { authClient } from "~/lib/auth-client" // [!code highlight]
+
+    const session = authClient.useSession() // [!code highlight]
+    </script>
+
+    <template>
+        <div>
+            <div>
+                <pre>{{ session.data }}</pre>
+                <button v-if="session.data" @click="authClient.signOut()">
+                    Sign out
+                </button>
+            </div>
+        </div>
+    </template>
+    ```
+  </Tab>
+
+  <Tab value="Svelte">
+    ```svelte title="user.svelte"
+    <script lang="ts">
+    import { authClient } from "$lib/auth-client"; // [!code highlight]
+
+    const session = authClient.useSession(); // [!code highlight]
+    </script>
+    <p>
+        {$session.data?.user.email}
+    </p>
+    ```
+  </Tab>
+
+  <Tab value="Vanilla">
+    ```ts title="user.svelte"
+    import { authClient } from "~/lib/auth-client"; //import the auth client
+
+    authClient.useSession.subscribe((value)=>{
+        //do something with the session //
+    }) 
+    ```
+  </Tab>
+
+  <Tab value="Solid">
+    ```tsx title="user.tsx"
+    import { authClient } from "~/lib/auth-client"; // [!code highlight]
+
+    export default function Home() {
+        const session = authClient.useSession() // [!code highlight]
+        return (
+            <pre>{JSON.stringify(session(), null, 2)}</pre>
+        );
+    }
+    ```
+  </Tab>
+</Tabs>
+
+#### Get Session
+
+If you prefer not to use the hook, you can use the `getSession` method provided by the client.
+
+```ts title="user.tsx"
+import { authClient } from "@/lib/auth-client" // import the auth client // [!code highlight]
+
+const { data: session, error } = await authClient.getSession()
+```
+
+You can also use it with client-side data-fetching libraries like [TanStack Query](https://tanstack.com/query/latest).
+
+### Server Side
+
+The server provides a `session` object that you can use to access the session data. It requires request headers object to be passed to the `getSession` method.
+
+**Example: Using some popular frameworks**
+
+<Tabs items={["Next.js", "Nuxt", "Svelte", "Astro", "Hono", "TanStack"]}>
+  <Tab value="Next.js">
+    ```ts title="server.ts"
+    import { auth } from "./auth"; // path to your Better Auth server instance
+    import { headers } from "next/headers";
+
+    const session = await auth.api.getSession({
+        headers: await headers() // you need to pass the headers object.
+    })
+    ```
+  </Tab>
+
+  <Tab value="Remix">
+    ```ts title="route.ts"
+    import { auth } from "lib/auth"; // path to your Better Auth server instance
+
+    export async function loader({ request }: LoaderFunctionArgs) {
+        const session = await auth.api.getSession({
+            headers: request.headers
+        })
+
+        return json({ session })
+    }
+    ```
+  </Tab>
+
+  <Tab value="Astro">
+    ```astro title="index.astro"
+    ---
+    import { auth } from "./auth";
+
+    const session = await auth.api.getSession({
+        headers: Astro.request.headers,
+    });
+    ---
+    <!-- Your Astro Template -->
+    ```
+  </Tab>
+
+  <Tab value="Svelte">
+    ```ts title="+page.ts"
+    import { auth } from "./auth";
+
+    export async function load({ request }) {
+        const session = await auth.api.getSession({
+            headers: request.headers
+        })
+        return {
+            props: {
+                session
+            }
+        }
+    }
+    ```
+  </Tab>
+
+  <Tab value="Hono">
+    ```ts title="index.ts"
+    import { auth } from "./auth";
+
+    const app = new Hono();
+
+    app.get("/path", async (c) => {
+        const session = await auth.api.getSession({
+            headers: c.req.raw.headers
+        })
+    });
+    ```
+  </Tab>
+
+  <Tab value="Nuxt">
+    ```ts title="server/session.ts"
+    import { auth } from "~/utils/auth";
+
+    export default defineEventHandler((event) => {
+        const session = await auth.api.getSession({
+            headers: event.headers,
+        })
+    });
+    ```
+  </Tab>
+
+  <Tab value="TanStack">
+    ```ts title="app/routes/api/index.ts"
+    import { auth } from "./auth";
+    import { createAPIFileRoute } from "@tanstack/start/api";
+
+    export const APIRoute = createAPIFileRoute("/api/$")({
+        GET: async ({ request }) => {
+            const session = await auth.api.getSession({
+                headers: request.headers
+            })
+        },
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Callout>
+  For more details check [session-management](/docs/concepts/session-management) documentation.
+</Callout>
+
+## Using Plugins
+
+One of the unique features of Better Auth is a plugins ecosystem. It allows you to add complex auth related functionality with small lines of code.
+
+Below is an example of how to add two factor authentication using two factor plugin.
+
+<Steps>
+  <Step>
+    ### Server Configuration
+
+    To add a plugin, you need to import the plugin and pass it to the `plugins` option of the auth instance. For example, to add two factor authentication, you can use the following code:
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { twoFactor } from "better-auth/plugins" // [!code highlight]
+
+    export const auth = betterAuth({
+        //...rest of the options
+        plugins: [ // [!code highlight]
+            twoFactor() // [!code highlight]
+        ] // [!code highlight]
+    })
+    ```
+
+    now two factor related routes and method will be available on the server.
+  </Step>
+
+  <Step>
+    ### Migrate Database
+
+    After adding the plugin, you'll need to add the required tables to your database. You can do this by running the `migrate` command, or by using the `generate` command to create the schema and handle the migration manually.
+
+    generating the schema:
+
+    ```bash title="terminal"
+    npx @better-auth/cli generate
+    ```
+
+    using the `migrate` command:
+
+    ```bash title="terminal"
+    npx @better-auth/cli migrate
+    ```
+
+    <Callout>
+      If you prefer adding the schema manually, you can check the schema required on the [two factor plugin](/docs/plugins/2fa#schema) documentation.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Client Configuration
+
+    Once we're done with the server, we need to add the plugin to the client. To do this, you need to import the plugin and pass it to the `plugins` option of the auth client. For example, to add two factor authentication, you can use the following code:
+
+    ```ts title="auth-client.ts"  
+    import { createAuthClient } from "better-auth/client";
+    import { twoFactorClient } from "better-auth/client/plugins"; // [!code highlight]
+
+    const authClient = createAuthClient({
+        plugins: [ // [!code highlight]
+            twoFactorClient({ // [!code highlight]
+                twoFactorPage: "/two-factor" // the page to redirect if a user need to verify 2nd factor // [!code highlight]
+            }) // [!code highlight]
+        ] // [!code highlight]
+    })
+    ```
+
+    now two factor related methods will be available on the client.
+
+    ```ts title="profile.ts"
+    import { authClient } from "./auth-client"
+
+    const enableTwoFactor = async() => {
+        const data = await authClient.twoFactor.enable({
+            password // the user password is required
+        }) // this will enable two factor
+    }
+
+    const disableTwoFactor = async() => {
+        const data = await authClient.twoFactor.disable({
+            password // the user password is required
+        }) // this will disable two factor
+    }
+
+    const signInWith2Factor = async() => {
+        const data = await authClient.signIn.email({
+            //...
+        })
+        //if the user has two factor enabled, it will redirect to the two factor page
+    }
+
+    const verifyTOTP = async() => {
+        const data = await authClient.twoFactor.verifyTOTP({
+            code: "123456", // the code entered by the user 
+            /**
+             * If the device is trusted, the user won't
+             * need to pass 2FA again on the same device
+             */
+            trustDevice: true
+        })
+    }
+    ```
+  </Step>
+
+  <Step>
+    Next step: See the <Link href="/docs/plugins/2fa">two factor plugin documentation</Link>.
+  </Step>
+</Steps>
+
+
+
+# comparison: Comparison
+URL: /docs/comparison
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/comparison.mdx
+
+Comparison of Better Auth versus over other auth libraries and services.
+        
+***
+
+title: Comparison
+description: Comparison of Better Auth versus over other auth libraries and services.
+-------------------------------------------------------------------------------------
+
+> <p className="text-orange-200">Comparison is the thief of joy.</p>
+
+Here are non detailed reasons why you may want to use Better Auth over other auth libraries and services.
+
+### vs Other Auth Libraries
+
+* **Framework agnostic** - Works with any framework, not just specific ones
+* **Advanced features built-in** - 2FA, multi-tenancy, multi-session, rate limiting, and many more
+* **Plugin system** - Extend functionality without forking or complex workarounds
+* **Full control** - Customize auth flows exactly how you want
+
+### vs Self-Hosted Auth Servers
+
+* **No separate infrastructure** - Runs in your app, users stay in your database
+* **Zero server maintenance** - No auth servers to deploy, monitor, or update
+* **Complete feature set** - Everything you need without the operational overhead
+
+### vs Managed Auth Services
+
+* **Keep your data** - Users stay in your database, not a third-party service
+* **No per-user costs** - Scale without worrying about auth billing
+* **Single source of truth** - All user data in one place
+
+### vs Rolling Your Own
+
+* **Security handled** - Battle-tested auth flows and security practices
+* **Focus on your product** - Spend time on features that matter to your business
+* **Plugin extensibility** - Add custom features without starting from scratch
+
+
+
+# installation: Installation
+URL: /docs/installation
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/installation.mdx
+
+Learn how to configure Better Auth in your project.
+        
+***
+
+title: Installation
+description: Learn how to configure Better Auth in your project.
+----------------------------------------------------------------
+
+<Steps>
+  <Step>
+    ### Install the Package
+
+    Let's start by adding Better Auth to your project:
+
+    <Tabs items={}>
+      <Tab value="npm">
+        ```bash
+        npm install better-auth
+        ```
+      </Tab>
+
+      <Tab value="pnpm">
+        ```bash
+        pnpm add better-auth
+        ```
+      </Tab>
+
+      <Tab value="yarn">
+        ```bash
+        yarn add better-auth
+        ```
+      </Tab>
+
+      <Tab value="bun">
+        ```bash
+        bun add better-auth
+        ```
+      </Tab>
+    </Tabs>
+
+    <Callout type="info">
+      If you're using a separate client and server setup, make sure to install Better Auth in both parts of your project.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Set Environment Variables
+
+    Create a `.env` file in the root of your project and add the following environment variables:
+
+    1. **Secret Key**
+
+    Random value used by the library for encryption and generating hashes. **You can generate one using the button below** or you can use something like openssl.
+
+    ```txt title=".env"
+    BETTER_AUTH_SECRET=
+    ```
+
+    <GenerateSecret />
+
+    2. **Set Base URL**
+
+    ```txt title=".env"
+    BETTER_AUTH_URL=http://localhost:3000 #Base URL of your app
+    ```
+  </Step>
+
+  <Step>
+    ### Create A Better Auth Instance
+
+    Create a file named `auth.ts` in one of these locations:
+
+    * Project root
+    * `lib/` folder
+    * `utils/` folder
+
+    You can also nest any of these folders under `src/`, `app/` or `server/` folder. (e.g. `src/lib/auth.ts`, `app/lib/auth.ts`).
+
+    And in this file, import Better Auth and create your auth instance. Make sure to export the auth instance with the variable name `auth` or as a `default` export.
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth";
+
+    export const auth = betterAuth({
+      //...
+    });
+    ```
+  </Step>
+
+  <Step>
+    ### Configure Database
+
+    Better Auth requires a database to store user data.
+    You can easily configure Better Auth to use SQLite, PostgreSQL, or MySQL, and more!
+
+    <Tabs items={["sqlite", "postgres", "mysql"]}>
+      <Tab value="sqlite">
+        ```ts title="auth.ts"
+        import { betterAuth } from "better-auth";
+        import Database from "better-sqlite3";
+
+        export const auth = betterAuth({
+            database: new Database("./sqlite.db"),
+        })
+        ```
+      </Tab>
+
+      <Tab value="postgres">
+        ```ts title="auth.ts"
+        import { betterAuth } from "better-auth";
+        import { Pool } from "pg";
+
+        export const auth = betterAuth({
+            database: new Pool({
+                // connection options
+            }),
+        })
+        ```
+      </Tab>
+
+      <Tab value="mysql">
+        ```ts title="auth.ts"
+        import { betterAuth } from "better-auth";
+        import { createPool } from "mysql2/promise";
+
+        export const auth = betterAuth({
+            database: createPool({
+                // connection options
+            }),
+        })
+        ```
+      </Tab>
+    </Tabs>
+
+    Alternatively, if you prefer to use an ORM, you can use one of the built-in adapters.
+
+    <Tabs items={["drizzle", "prisma", "mongodb"]}>
+      <Tab value="drizzle">
+        ```ts title="auth.ts"
+        import { betterAuth } from "better-auth";
+        import { drizzleAdapter } from "better-auth/adapters/drizzle";
+        import { db } from "@/db"; // your drizzle instance
+
+        export const auth = betterAuth({
+            database: drizzleAdapter(db, {
+                provider: "pg", // or "mysql", "sqlite"
+            }),
+        });
+        ```
+      </Tab>
+
+      <Tab value="prisma">
+        ```ts title="auth.ts"
+        import { betterAuth } from "better-auth";
+        import { prismaAdapter } from "better-auth/adapters/prisma";
+        // If your Prisma file is located elsewhere, you can change the path
+        import { PrismaClient } from "@/generated/prisma";
+
+        const prisma = new PrismaClient();
+        export const auth = betterAuth({
+            database: prismaAdapter(prisma, {
+                provider: "sqlite", // or "mysql", "postgresql", ...etc
+            }),
+        });
+        ```
+      </Tab>
+
+      <Tab value="mongodb">
+        ```ts title="auth.ts"
+        import { betterAuth } from "better-auth";
+        import { mongodbAdapter } from "better-auth/adapters/mongodb";
+        import { client } from "@/db"; // your mongodb client
+
+        export const auth = betterAuth({
+            database: mongodbAdapter(client),
+        });
+        ```
+      </Tab>
+    </Tabs>
+
+    <Callout>
+      If your database is not listed above, check out our other supported
+      [databases](/docs/adapters/other-relational-databases) for more information,
+      or use one of the supported ORMs.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Create Database Tables
+
+    Better Auth includes a CLI tool to help manage the schema required by the library.
+
+    * **Generate**: This command generates an ORM schema or SQL migration file.
+
+    <Callout>
+      If you're using Kysely, you can apply the migration directly with `migrate` command below. Use `generate` only if you plan to apply the migration manually.
+    </Callout>
+
+    ```bash title="Terminal"
+    npx @better-auth/cli generate
+    ```
+
+    * **Migrate**: This command creates the required tables directly in the database. (Available only for the built-in Kysely adapter)
+
+    ```bash title="Terminal"
+    npx @better-auth/cli migrate
+    ```
+
+    see the [CLI documentation](/docs/concepts/cli) for more information.
+
+    <Callout>
+      If you instead want to create the schema manually, you can find the core schema required in the [database section](/docs/concepts/database#core-schema).
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Authentication Methods
+
+    Configure the authentication methods you want to use. Better Auth comes with built-in support for email/password, and social sign-on providers.
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth";
+
+    export const auth = betterAuth({
+      //...other options
+      emailAndPassword: {
+        // [!code highlight]
+        enabled: true, // [!code highlight]
+      }, // [!code highlight]
+      socialProviders: {
+        // [!code highlight]
+        github: {
+          // [!code highlight]
+          clientId: process.env.GITHUB_CLIENT_ID as string, // [!code highlight]
+          clientSecret: process.env.GITHUB_CLIENT_SECRET as string, // [!code highlight]
+        }, // [!code highlight]
+      }, // [!code highlight]
+    });
+    ```
+
+    <Callout type="info">
+      You can use even more authentication methods like [passkey](/docs/plugins/passkey), [username](/docs/plugins/username), [magic link](/docs/plugins/magic-link) and more through plugins.
+    </Callout>
+  </Step>
+
+  <Step>
+    ### Mount Handler
+
+    To handle API requests, you need to set up a route handler on your server.
+
+    Create a new file or route in your framework's designated catch-all route handler. This route should handle requests for the path `/api/auth/*` (unless you've configured a different base path).
+
+    <Callout>
+      Better Auth supports any backend framework with standard Request and Response
+      objects and offers helper functions for popular frameworks.
+    </Callout>
+
+    <Tabs items={["next-js", "nuxt", "svelte-kit", "remix", "solid-start", "hono", "express", "elysia", "tanstack-start", "expo"]} defaultValue="react">
+      <Tab value="next-js">
+        ```ts title="/app/api/auth/[...all]/route.ts"
+        import { auth } from "@/lib/auth"; // path to your auth file
+        import { toNextJsHandler } from "better-auth/next-js";
+
+        export const { POST, GET } = toNextJsHandler(auth);
+        ```
+      </Tab>
+
+      <Tab value="nuxt">
+        ```ts title="/server/api/auth/[...all].ts"
+        import { auth } from "~/utils/auth"; // path to your auth file
+
+        export default defineEventHandler((event) => {
+            return auth.handler(toWebRequest(event));
+        });
+        ```
+      </Tab>
+
+      <Tab value="svelte-kit">
+        ```ts title="hooks.server.ts"
+        import { auth } from "$lib/auth"; // path to your auth file
+        import { svelteKitHandler } from "better-auth/svelte-kit";
+        import { building } from '$app/environment'
+
+        export async function handle({ event, resolve }) {
+            return svelteKitHandler({ event, resolve, auth, building });
+        }
+        ```
+      </Tab>
+
+      <Tab value="remix">
+        ```ts title="/app/routes/api.auth.$.ts"
+        import { auth } from '~/lib/auth.server' // Adjust the path as necessary
+        import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node"
+
+        export async function loader({ request }: LoaderFunctionArgs) {
+            return auth.handler(request)
+        }
+
+        export async function action({ request }: ActionFunctionArgs) {
+            return auth.handler(request)
+        }
+        ```
+      </Tab>
+
+      <Tab value="solid-start">
+        ```ts title="/routes/api/auth/*all.ts"
+        import { auth } from "~/lib/auth"; // path to your auth file
+        import { toSolidStartHandler } from "better-auth/solid-start";
+
+        export const { GET, POST } = toSolidStartHandler(auth);
+        ```
+      </Tab>
+
+      <Tab value="hono">
+        ```ts title="src/index.ts"
+        import { Hono } from "hono";
+        import { auth } from "./auth"; // path to your auth file
+        import { serve } from "@hono/node-server";
+        import { cors } from "hono/cors";
+
+        const app = new Hono();
+
+        app.on(["POST", "GET"], "/api/auth/**", (c) => auth.handler(c.req.raw));
+
+        serve(app);
+        ```
+      </Tab>
+
+      <Tab value="express">
+        <Callout type="warn">
+          ExpressJS v5 introduced breaking changes to route path matching by switching to `path-to-regexp@6`. Wildcard routes like `*` should now be written using the new named syntax, e.g. `/{*any}`, to properly capture catch-all patterns. This ensures compatibility and predictable behavior across routing scenarios.
+          See the [Express v5 migration guide](https://expressjs.com/en/guide/migrating-5.html) for details.
+
+          As a result, the implementation in ExpressJS v5 should look like this:
+
+          ```ts
+          app.all('/api/auth/{*any}', toNodeHandler(auth));
+          ```
+
+          *The name any is arbitrary and can be replaced with any identifier you prefer.*
+        </Callout>
+
+        ```ts title="server.ts"
+        import express from "express";
+        import { toNodeHandler } from "better-auth/node";
+        import { auth } from "./auth";
+
+        const app = express();
+        const port = 8000;
+
+        app.all("/api/auth/*", toNodeHandler(auth));
+
+        // Mount express json middleware after Better Auth handler
+        // or only apply it to routes that don't interact with Better Auth
+        app.use(express.json());
+
+        app.listen(port, () => {
+            console.log(`Better Auth app listening on port ${port}`);
+        });
+        ```
+
+        This will also work for any other node server framework like express, fastify, hapi, etc., but may require some modifications. See [fastify guide](/docs/integrations/fastify). Note that CommonJS (cjs) isn't supported.
+      </Tab>
+
+      <Tab value="astro">
+        ```ts title="/pages/api/auth/[...all].ts"
+        import type { APIRoute } from "astro";
+        import { auth } from "@/auth"; // path to your auth file
+
+        export const GET: APIRoute = async (ctx) => {
+            return auth.handler(ctx.request);
+        };
+
+        export const POST: APIRoute = async (ctx) => {
+            return auth.handler(ctx.request);
+        };
+        ```
+      </Tab>
+
+      <Tab value="elysia">
+        ```ts
+        import { Elysia, Context } from "elysia";
+        import { auth } from "./auth";
+
+        const betterAuthView = (context: Context) => {
+            const BETTER_AUTH_ACCEPT_METHODS = ["POST", "GET"]
+            // validate request method
+            if(BETTER_AUTH_ACCEPT_METHODS.includes(context.request.method)) {
+                return auth.handler(context.request);
+            } else {
+                context.error(405)
+            }
+        }
+
+        const app = new Elysia().all("/api/auth/*", betterAuthView).listen(3000);
+
+        console.log(
+        `🦊 Elysia is running at ${app.server?.hostname}:${app.server?.port}`
+        );
+        ```
+      </Tab>
+
+      <Tab value="tanstack-start">
+        ```ts title="src/routes/api/auth/$.ts"
+        import { auth } from '~/lib/server/auth'
+        import { createServerFileRoute } from '@tanstack/react-start/server'
+
+        export const ServerRoute = createServerFileRoute('/api/auth/$').methods({
+        GET: ({ request }) => {
+            return auth.handler(request)
+        },
+        POST: ({ request }) => {
+            return auth.handler(request)
+        },
+        });
+        ```
+      </Tab>
+
+      <Tab value="expo">
+        ```ts title="app/api/auth/[...all]+api.ts"
+        import { auth } from '@/lib/server/auth'; // path to your auth file
+
+        const handler = auth.handler;
+        export { handler as GET, handler as POST };
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    ### Create Client Instance
+
+    The client-side library helps you interact with the auth server. Better Auth comes with a client for all the popular web frameworks, including vanilla JavaScript.
+
+    1. Import `createAuthClient` from the package for your framework (e.g., "better-auth/react" for React).
+    2. Call the function to create your client.
+    3. Pass the base URL of your auth server. (If the auth server is running on the same domain as your client, you can skip this step.)
+
+    <Callout type="info">
+      If you're using a different base path other than `/api/auth` make sure to pass
+      the whole URL including the path. (e.g.
+      `http://localhost:3000/custom-path/auth`)
+    </Callout>
+
+    <Tabs
+      items={["react", "vue", "svelte", "solid",
+"vanilla"]}
+      defaultValue="react"
+    >
+      <Tab value="vanilla">
+        ```ts title="lib/auth-client.ts"
+        import { createAuthClient } from "better-auth/client"
+        export const authClient = createAuthClient({
+            /** The base URL of the server (optional if you're using the same domain) */ // [!code highlight]
+            baseURL: "http://localhost:3000" // [!code highlight]
+        })
+        ```
+      </Tab>
+
+      <Tab value="react" title="lib/auth-client.ts">
+        ```ts title="lib/auth-client.ts"
+        import { createAuthClient } from "better-auth/react"
+        export const authClient = createAuthClient({
+            /** The base URL of the server (optional if you're using the same domain) */ // [!code highlight]
+            baseURL: "http://localhost:3000" // [!code highlight]
+        })
+        ```
+      </Tab>
+
+      <Tab value="vue" title="lib/auth-client.ts">
+        ```ts title="lib/auth-client.ts"
+        import { createAuthClient } from "better-auth/vue"
+        export const authClient = createAuthClient({
+            /** The base URL of the server (optional if you're using the same domain) */ // [!code highlight]
+            baseURL: "http://localhost:3000" // [!code highlight]
+        })
+        ```
+      </Tab>
+
+      <Tab value="svelte" title="lib/auth-client.ts">
+        ```ts title="lib/auth-client.ts"
+        import { createAuthClient } from "better-auth/svelte"
+        export const authClient = createAuthClient({
+            /** The base URL of the server (optional if you're using the same domain) */ // [!code highlight]
+            baseURL: "http://localhost:3000" // [!code highlight]
+        })
+        ```
+      </Tab>
+
+      <Tab value="solid" title="lib/auth-client.ts">
+        ```ts title="lib/auth-client.ts"
+        import { createAuthClient } from "better-auth/solid"
+        export const authClient = createAuthClient({
+            /** The base URL of the server (optional if you're using the same domain) */ // [!code highlight]
+            baseURL: "http://localhost:3000" // [!code highlight]
+        })
+        ```
+      </Tab>
+    </Tabs>
+
+    <Callout type="info">
+      Tip: You can also export specific methods if you prefer:
+    </Callout>
+
+    ```ts
+    export const { signIn, signUp, useSession } = createAuthClient()
+    ```
+  </Step>
+
+  <Step>
+    ### 🎉 That's it!
+
+    That's it! You're now ready to use better-auth in your application. Continue to [basic usage](/docs/basic-usage) to learn how to use the auth instance to sign in users.
+  </Step>
+</Steps>
+
+
+
+# introduction: Introduction
+URL: /docs/introduction
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/introduction.mdx
+
+Introduction to Better Auth.
+        
+***
+
+title: Introduction
+description: Introduction to Better Auth.
+-----------------------------------------
+
+Better Auth is a framework-agnostic authentication and authorization framework for TypeScript. It provides a comprehensive set of features out of the box and includes a plugin ecosystem that simplifies adding advanced functionalities. Whether you need 2FA, multi-tenancy, multi-session support, or even enterprise features like SSO, it lets you focus on building your application instead of reinventing the wheel.
+
+## Why Better Auth?
+
+*Authentication in the TypeScript ecosystem has long been a half-solved problem. Other open-source libraries often require a lot of additional code for anything beyond basic authentication features. Rather than just pushing third-party services as the solution, I believe we can do better as a community—hence, Better Auth.*
+
+## Features
+
+Better Auth aims to be the most comprehensive auth library. It provides a wide range of features out of the box and allows you to extend it with plugins. Here are some of the features:
+
+<Features />
+
+...and much more!
+
+## LLMs.txt
+
+Better Auth provides an LLMs.txt file that helps AI models understand how to interact with your authentication system. You can find it at [https://better-auth.com/llms.txt](https://better-auth.com/llms.txt).
+
+
+
+# adapters: Community Adapters
+URL: /docs/adapters/community-adapters
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/adapters/community-adapters.mdx
+
+Integrate Better Auth with community made database adapters.
+        
+***
+
+title: Community Adapters
+description: Integrate Better Auth with community made database adapters.
+-------------------------------------------------------------------------
+
+This page showcases a list of recommended community made database adapters.
+We encourage you to create any missing database adapters and maybe get added to the list!
+
+| Adapter                                                                                                 | Database Dialect                           | Author                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [convex-better-auth](https://github.com/get-convex/better-auth)                                         | [Convex Database](https://www.convex.dev/) | <img src="https://github.com/erquhart.png" className="rounded-full w-6 h-6 border opacity-70 m-0 inline mr-1" /> [erquhart](https://github.com/erquhart)          |
+| [surrealdb-better-auth](https://github.com/Necmttn/surrealdb-better-auth)                               | [Surreal Database](https://surrealdb.com/) | <img src="https://github.com/Necmttn.png" className="rounded-full w-6 h-6 border opacity-70 m-0 inline mr-1" /> [Necmttn](https://github.com/Necmttn)             |
+| [better-auth-surrealdb](https://github.com/msanchezdev/better-auth-surrealdb)                           | [Surreal Database](https://surrealdb.com/) | <img src="https://github.com/msanchezdev.png" className="rounded-full w-6 h-6 border opacity-70 m-0 inline mr-1" /> [msanchezdev](https://github.com/msanchezdev) |
+| [payload-better-auth](https://github.com/ForrestDevs/payload-better-auth/tree/main/packages/db-adapter) | [Payload CMS](https://payloadcms.com/)     | <img src="https://github.com/forrestdevs.png" className="rounded-full w-6 h-6 border opacity-70 m-0 inline mr-1" /> [forrestdevs](https://github.com/forrestdevs) |
+| [@ronin/better-auth](https://github.com/ronin-co/better-auth)                                           | [RONIN](https://ronin.co)                  | <img src="https://github.com/ronin-co.png" className="rounded-full w-6 h-6 border opacity-70 m-0 inline mr-1" /> [ronin-co](https://github.com/ronin-co)          |
+| [better-auth-instantdb](https://github.com/daveyplate/better-auth-instantdb)                            | [InstantDB](https://www.instantdb.com/)    | <img src="https://github.com/daveycodez.png" className="rounded-full w-6 h-6 border opacity-70 m-0 inline mr-1" /> [daveycodez](https://github.com/daveycodez)    |
+| [@nerdfolio/remult-better-auth](https://github.com/nerdfolio/remult-better-auth)                        | [Remult](https://remult.dev/)              | <img src="https://github.com/taivo.png" className="rounded-full w-6 h-6 border opacity-70 m-0 inline mr-1" /> [Tai Vo](https://github.com/taivo)                  |
+
+
+
+# adapters: Drizzle ORM Adapter
+URL: /docs/adapters/drizzle
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/adapters/drizzle.mdx
+
+Integrate Better Auth with Drizzle ORM.
+        
+***
+
+title: Drizzle ORM Adapter
+description: Integrate Better Auth with Drizzle ORM.
+----------------------------------------------------
+
+Drizzle ORM is a powerful and flexible ORM for Node.js and TypeScript. It provides a simple and intuitive API for working with databases, and supports a wide range of databases including MySQL, PostgreSQL, SQLite, and more.
+Read more here: [Drizzle ORM](https://orm.drizzle.team/).
+
+## Example Usage
+
+Make sure you have Drizzle installed and configured.
+Then, you can use the Drizzle adapter to connect to your database.
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { db } from "./database.ts";
+
+export const auth = betterAuth({
+  database: drizzleAdapter(db, {
+    // [!code highlight]
+    provider: "sqlite", // or "pg" or "mysql" // [!code highlight]
+  }), // [!code highlight]
+  //... the rest of your config
+});
+```
+
+## Schema generation & migration
+
+The [Better Auth CLI](/docs/concepts/cli) allows you to generate or migrate
+your database schema based on your Better Auth configuration and plugins.
+
+To generate the schema required by Better Auth, run the following command:
+
+```bash title="Schema Generation"
+npx @better-auth/cli@latest generate
+```
+
+To generate and apply the migration, run the following commands:
+
+```bash title="Schema Migration"
+npx drizzle-kit generate # generate the migration file
+npx drizzle-kit migrate # apply the migration
+```
+
+## Additional Information
+
+The Drizzle adapter expects the schema you define to match the table names. For example, if your Drizzle schema maps the `user` table to `users`, you need to manually pass the schema and map it to the user table.
+
+```ts
+import { betterAuth } from "better-auth";
+import { db } from "./drizzle";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { schema } from "./schema";
+
+export const auth = betterAuth({
+  database: drizzleAdapter(db, {
+    provider: "sqlite", // or "pg" or "mysql"
+    schema: {
+      ...schema,
+      user: schema.users,
+    },
+  }),
+});
+```
+
+If all your tables are using plural form, you can just pass the `usePlural` option:
+
+```ts
+export const auth = betterAuth({
+  database: drizzleAdapter(db, {
+    ...
+    usePlural: true,
+  }),
+});
+```
+
+If you're looking for performance improvements or tips, take a look at our guide to <Link href="/docs/guides/optimizing-for-performance">performance optimizations</Link>.
+
+
+
+# adapters: MongoDB Adapter
+URL: /docs/adapters/mongo
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/adapters/mongo.mdx
+
+Integrate Better Auth with MongoDB.
+        
+***
+
+title: MongoDB Adapter
+description: Integrate Better Auth with MongoDB.
+------------------------------------------------
+
+MongoDB is a popular NoSQL database that is widely used for building scalable and flexible applications. It provides a flexible schema that allows for easy data modeling and querying.
+Read more here: [MongoDB](https://www.mongodb.com/).
+
+## Example Usage
+
+Make sure you have MongoDB installed and configured.
+Then, you can use the mongodb adapter.
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { MongoClient } from "mongodb";
+import { mongodbAdapter } from "better-auth/adapters/mongodb";
+
+const client = new MongoClient("mongodb://localhost:27017/database");
+const db = client.db();
+
+export const auth = betterAuth({
+  database: mongodbAdapter(db),
+});
+```
+
+## Schema generation & migration
+
+For MongoDB, we don't need to generate or migrate the schema.
+
+
+
+# adapters: MS SQL
+URL: /docs/adapters/mssql
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/adapters/mssql.mdx
+
+Integrate Better Auth with MS SQL.
+        
+***
+
+title: MS SQL
+description: Integrate Better Auth with MS SQL.
+-----------------------------------------------
+
+Microsoft SQL Server is a relational database management system developed by Microsoft, designed for enterprise-level data storage, management, and analytics with robust security and scalability features.
+Read more [here](https://en.wikipedia.org/wiki/Microsoft_SQL_Server).
+
+## Example Usage
+
+Make sure you have MS SQL installed and configured.
+Then, you can connect it straight into Better Auth.
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { MssqlDialect } from "kysely";
+import * as Tedious from 'tedious'
+import * as Tarn from 'tarn'
+
+const dialect = new MssqlDialect({
+  tarn: {
+    ...Tarn,
+    options: {
+      min: 0,
+      max: 10,
+    },
+  },
+  tedious: {
+    ...Tedious,
+    connectionFactory: () => new Tedious.Connection({
+      authentication: {
+        options: {
+          password: 'password',
+          userName: 'username',
+        },
+        type: 'default',
+      },
+      options: {
+        database: 'some_db',
+        port: 1433,
+        trustServerCertificate: true,
+      },
+      server: 'localhost',
+    }),
+  },
+})
+
+export const auth = betterAuth({
+  database: {
+    dialect,
+    type: "mssql"
+  }
+});
+
+
+```
+
+<Callout>
+  For more information, read Kysely's documentation to the [MssqlDialect](https://kysely-org.github.io/kysely-apidoc/classes/MssqlDialect.html).
+</Callout>
+
+## Schema generation & migration
+
+The [Better Auth CLI](/docs/concepts/cli) allows you to generate or migrate
+your database schema based on your Better Auth configuration and plugins.
+
+<table>
+  <thead>
+    <tr className="border-b">
+      <th>
+        <p className="font-bold text-[16px] mb-1">MS SQL Schema Generation</p>
+      </th>
+
+      <th>
+        <p className="font-bold text-[16px] mb-1">MS SQL Schema Migration</p>
+      </th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr className="h-10">
+      <td>✅ Supported</td>
+      <td>✅ Supported</td>
+    </tr>
+  </tbody>
+</table>
+
+```bash title="Schema Generation"
+npx @better-auth/cli@latest generate
+```
+
+```bash title="Schema Migration"
+npx @better-auth/cli@latest migrate
+```
+
+## Additional Information
+
+MS SQL is supported under the hood via the [Kysely](https://kysely.dev/) adapter, any database supported by Kysely would also be supported. (<Link href="/docs/adapters/other-relational-databases">Read more here</Link>)
+
+If you're looking for performance improvements or tips, take a look at our guide to <Link href="/docs/guides/optimizing-for-performance">performance optimizations</Link>.
+
+
+
+# adapters: MySQL
+URL: /docs/adapters/mysql
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/adapters/mysql.mdx
+
+Integrate Better Auth with MySQL.
+        
+***
+
+title: MySQL
+description: Integrate Better Auth with MySQL.
+----------------------------------------------
+
+MySQL is a popular open-source relational database management system (RDBMS) that is widely used for building web applications and other types of software. It provides a flexible and scalable database solution that allows for efficient storage and retrieval of data.
+Read more here: [MySQL](https://www.mysql.com/).
+
+## Example Usage
+
+Make sure you have MySQL installed and configured.
+Then, you can connect it straight into Better Auth.
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { createPool } from "mysql2/promise";
+
+export const auth = betterAuth({
+  database: createPool({
+    host: "localhost",
+    user: "root",
+    password: "password",
+    database: "database",
+  }),
+});
+```
+
+<Callout>
+  For more information, read Kysely's documentation to the
+  [MySQLDialect](https://kysely-org.github.io/kysely-apidoc/classes/MysqlDialect.html).
+</Callout>
+
+## Schema generation & migration
+
+The [Better Auth CLI](/docs/concepts/cli) allows you to generate or migrate
+your database schema based on your Better Auth configuration and plugins.
+
+<table>
+  <thead>
+    <tr className="border-b">
+      <th>
+        <p className="font-bold text-[16px] mb-1">MySQL Schema Generation</p>
+      </th>
+
+      <th>
+        <p className="font-bold text-[16px] mb-1">MySQL Schema Migration</p>
+      </th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr className="h-10">
+      <td>✅ Supported</td>
+      <td>✅ Supported</td>
+    </tr>
+  </tbody>
+</table>
+
+```bash title="Schema Generation"
+npx @better-auth/cli@latest generate
+```
+
+```bash title="Schema Migration"
+npx @better-auth/cli@latest migrate
+```
+
+## Additional Information
+
+MySQL is supported under the hood via the [Kysely](https://kysely.dev/) adapter, any database supported by Kysely would also be supported. (<Link href="/docs/adapters/other-relational-databases">Read more here</Link>)
+
+If you're looking for performance improvements or tips, take a look at our guide to <Link href="/docs/guides/optimizing-for-performance">performance optimizations</Link>.
+
+
+
+# adapters: Other Relational Databases
+URL: /docs/adapters/other-relational-databases
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/adapters/other-relational-databases.mdx
+
+Integrate Better Auth with other relational databases.
+        
+***
+
+title: Other Relational Databases
+description: Integrate Better Auth with other relational databases.
+-------------------------------------------------------------------
+
+Better Auth supports a wide range of database dialects out of the box thanks to <Link href="https://kysely.dev/">Kysely</Link>.
+
+Any dialect supported by Kysely can be utilized with Better Auth, including capabilities for generating and migrating database schemas through the <Link href="/docs/concepts/cli">CLI</Link>.
+
+## Core Dialects
+
+* [MySQL](/docs/adapters/mysql)
+* [SQLite](/docs/adapters/sqlite)
+* [PostgreSQL](/docs/adapters/postgresql)
+* [MS SQL](/docs/adapters/mssql)
+
+## Kysely Organization Dialects
+
+* [Postgres.js](https://github.com/kysely-org/kysely-postgres-js)
+* [SingleStore Data API](https://github.com/kysely-org/kysely-singlestore)
+
+## Kysely Community dialects
+
+* [PlanetScale Serverless Driver](https://github.com/depot/kysely-planetscale)
+* [Cloudflare D1](https://github.com/aidenwallis/kysely-d1)
+* [AWS RDS Data API](https://github.com/serverless-stack/kysely-data-api)
+* [SurrealDB](https://github.com/igalklebanov/kysely-surrealdb)
+* [Neon](https://github.com/seveibar/kysely-neon)
+* [Xata](https://github.com/xataio/client-ts/tree/main/packages/plugin-client-kysely)
+* [AWS S3 Select](https://github.com/igalklebanov/kysely-s3-select)
+* [libSQL/sqld](https://github.com/libsql/kysely-libsql)
+* [Fetch driver](https://github.com/andersgee/kysely-fetch-driver)
+* [SQLite WASM](https://github.com/DallasHoff/sqlocal)
+* [Deno SQLite](https://gitlab.com/soapbox-pub/kysely-deno-sqlite)
+* [TiDB Cloud Serverless Driver](https://github.com/tidbcloud/kysely)
+* [Capacitor SQLite Kysely](https://github.com/DawidWetzler/capacitor-sqlite-kysely)
+* [BigQuery](https://github.com/maktouch/kysely-bigquery)
+* [Clickhouse](https://github.com/founderpathcom/kysely-clickhouse)
+* [PGLite](https://github.com/czeidler/kysely-pglite-dialect)
+
+<Callout>
+  You can see the full list of supported Kysely dialects{" "}
+  <Link href="https://kysely.dev/docs/dialects">here</Link>.
+</Callout>
+
+
+
+# adapters: PostgreSQL
+URL: /docs/adapters/postgresql
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/adapters/postgresql.mdx
+
+Integrate Better Auth with PostgreSQL.
+        
+***
+
+title: PostgreSQL
+description: Integrate Better Auth with PostgreSQL.
+---------------------------------------------------
+
+PostgreSQL is a powerful, open-source relational database management system known for its advanced features, extensibility, and support for complex queries and large datasets.
+Read more [here](https://www.postgresql.org/).
+
+## Example Usage
+
+Make sure you have PostgreSQL installed and configured.
+Then, you can connect it straight into Better Auth.
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { Pool } from "pg";
+
+export const auth = betterAuth({
+  database: new Pool({
+    connectionString: "postgres://user:password@localhost:5432/database",
+  }),
+});
+```
+
+<Callout>
+  For more information, read Kysely's documentation to the
+  [PostgresDialect](https://kysely-org.github.io/kysely-apidoc/classes/PostgresDialect.html).
+</Callout>
+
+## Schema generation & migration
+
+The [Better Auth CLI](/docs/concepts/cli) allows you to generate or migrate
+your database schema based on your Better Auth configuration and plugins.
+
+<table>
+  <thead>
+    <tr className="border-b">
+      <th>
+        <p className="font-bold text-[16px] mb-1">PostgreSQL Schema Generation</p>
+      </th>
+
+      <th>
+        <p className="font-bold text-[16px] mb-1">PostgreSQL Schema Migration</p>
+      </th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr className="h-10">
+      <td>✅ Supported</td>
+      <td>✅ Supported</td>
+    </tr>
+  </tbody>
+</table>
+
+```bash title="Schema Generation"
+npx @better-auth/cli@latest generate
+```
+
+```bash title="Schema Migration"
+npx @better-auth/cli@latest migrate
+```
+
+## Additional Information
+
+PostgreSQL is supported under the hood via the [Kysely](https://kysely.dev/) adapter, any database supported by Kysely would also be supported. (<Link href="/docs/adapters/other-relational-databases">Read more here</Link>)
+
+If you're looking for performance improvements or tips, take a look at our guide to <Link href="/docs/guides/optimizing-for-performance">performance optimizations</Link>.
+
+
+
+# adapters: Prisma
+URL: /docs/adapters/prisma
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/adapters/prisma.mdx
+
+Integrate Better Auth with Prisma.
+        
+***
+
+title: Prisma
+description: Integrate Better Auth with Prisma.
+-----------------------------------------------
+
+Prisma ORM is an open-source database toolkit that simplifies database access and management in applications by providing a type-safe query builder and an intuitive data modeling interface.
+Read more [here](https://www.prisma.io/).
+
+## Example Usage
+
+Make sure you have Prisma installed and configured.
+Then, you can use the Prisma adapter to connect to your database.
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { prismaAdapter } from "better-auth/adapters/prisma";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+export const auth = betterAuth({
+  database: prismaAdapter(prisma, {
+    provider: "sqlite",
+  }),
+});
+```
+
+<Callout type="warning">
+  If you have configured a custom output directory in your `schema.prisma` file (e.g., `output = "../src/generated/prisma"`), make sure to import the Prisma client from that location instead of `@prisma/client`. Learn more about custom output directories in the [Prisma documentation](https://www.prisma.io/docs/guides/nextjs#21-install-prisma-orm-and-create-your-first-models).
+</Callout>
+
+## Schema generation & migration
+
+The [Better Auth CLI](/docs/concepts/cli) allows you to generate or migrate
+your database schema based on your Better Auth configuration and plugins.
+
+<table>
+  <thead>
+    <tr className="border-b">
+      <th>
+        <p className="font-bold text-[16px] mb-1">Prisma Schema Generation</p>
+      </th>
+
+      <th>
+        <p className="font-bold text-[16px] mb-1">Prisma Schema Migration</p>
+      </th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr className="h-10">
+      <td>✅ Supported</td>
+      <td>❌ Not Supported</td>
+    </tr>
+  </tbody>
+</table>
+
+```bash title="Schema Generation"
+npx @better-auth/cli@latest generate
+```
+
+## Additional Information
+
+If you're looking for performance improvements or tips, take a look at our guide to <Link href="/docs/guides/optimizing-for-performance">performance optimizations</Link>.
+
+
+
+# adapters: SQLite
+URL: /docs/adapters/sqlite
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/adapters/sqlite.mdx
+
+Integrate Better Auth with SQLite.
+        
+***
+
+title: SQLite
+description: Integrate Better Auth with SQLite.
+-----------------------------------------------
+
+SQLite is a lightweight, serverless, self-contained SQL database engine that is widely used for local data storage in applications.
+Read more [here.](https://www.sqlite.org/)
+
+## Example Usage
+
+Make sure you have SQLite installed and configured.
+Then, you can connect it straight into Better Auth.
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import Database from "better-sqlite3";
+
+export const auth = betterAuth({
+  database: new Database("database.sqlite"),
+});
+```
+
+<Callout>
+  For more information, read Kysely's documentation to the
+  [SqliteDialect](https://kysely-org.github.io/kysely-apidoc/classes/SqliteDialect.html).
+</Callout>
+
+## Schema generation & migration
+
+The [Better Auth CLI](/docs/concepts/cli) allows you to generate or migrate
+your database schema based on your Better Auth configuration and plugins.
+
+<table>
+  <thead>
+    <tr className="border-b">
+      <th>
+        <p className="font-bold text-[16px] mb-1">SQLite Schema Generation</p>
+      </th>
+
+      <th>
+        <p className="font-bold text-[16px] mb-1">SQLite Schema Migration</p>
+      </th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr className="h-10">
+      <td>✅ Supported</td>
+      <td>✅ Supported</td>
+    </tr>
+  </tbody>
+</table>
+
+```bash title="Schema Generation"
+npx @better-auth/cli@latest generate
+```
+
+```bash title="Schema Migration"
+npx @better-auth/cli@latest migrate
+```
+
+## Additional Information
+
+SQLite is supported under the hood via the [Kysely](https://kysely.dev/) adapter, any database supported by Kysely would also be supported. (<Link href="/docs/adapters/other-relational-databases">Read more here</Link>)
+
+If you're looking for performance improvements or tips, take a look at our guide to <Link href="/docs/guides/optimizing-for-performance">performance optimizations</Link>.
+
+
+
+# authentication: Apple
+URL: /docs/authentication/apple
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/authentication/apple.mdx
+
+Apple provider setup and usage.
+        
+***
+
+title: Apple
+description: Apple provider setup and usage.
+--------------------------------------------
+
+<Steps>
+  <Step>
+    ### Get your OAuth credentials
+
+    To use Apple sign in, you need a client ID and client secret. You can get them from the [Apple Developer Portal](https://developer.apple.com/account/resources/authkeys/list).
+
+    You will need an active **Apple Developer account** to access the developer portal and generate these credentials.
+
+    Follow these steps to set up your App ID, Service ID, and generate the key needed for your client secret:
+
+    1. **Navigate to Certificates, Identifiers & Profiles:**
+       In the Apple Developer Portal, go to the "Certificates, Identifiers & Profiles" section.
+
+    2. **Create an App ID:**
+       * Go to the `Identifiers` tab.
+       * Click the `+` icon next to Identifiers.
+       * Select `App IDs`, then click `Continue`.
+       * Select `App` as the type, then click `Continue`.
+       * **Description:** Enter a name for your app (e.g., "My Awesome App"). This name may be displayed to users when they sign in.
+       * **Bundle ID:** Set a bundle ID. The recommended format is a reverse domain name (e.g., `com.yourcompany.yourapp`). Using a suffix like `.ai` (for app identifier) can help with organization but is not required (e.g., `com.yourcompany.yourapp.ai`).
+       * Scroll down to **Capabilities**. Select the checkbox for `Sign In with Apple`.
+       * Click `Continue`, then `Register`.
+
+    3. **Create a Service ID:**
+       * Go back to the `Identifiers` tab.
+       * Click the `+` icon.
+       * Select `Service IDs`, then click `Continue`.
+       * **Description:** Enter a description for this service (e.g., your app name again).
+       * **Identifier:** Set a unique identifier for the service. Use a reverse domain format, distinct from your App ID (e.g., `com.yourcompany.yourapp.si`, where `.si` indicates service identifier - this is for your organization and not required). **This Service ID will be your `clientId`.**
+       * Click `Continue`, then `Register`.
+
+    4. **Configure the Service ID:**
+       * Find the Service ID you just created in the `Identifiers` list and click on it.
+       * Check the `Sign In with Apple` capability, then click `Configure`.
+       * Under **Primary App ID**, select the App ID you created earlier (e.g., `com.yourcompany.yourapp.ai`).
+       * Under **Domains and Subdomains**, list all the root domains you will use for Sign In with Apple (e.g., `example.com`, `anotherdomain.com`).
+       * Under **Return URLs**, enter the callback URL. `https://yourdomain.com/api/auth/callback/apple`. Add all necessary return URLs.
+       * Click `Next`, then `Done`.
+       * Click `Continue`, then `Save`.
+
+    5. **Create a Client Secret Key:**
+       * Go to the `Keys` tab.
+       * Click the `+` icon to create a new key.
+       * **Key Name:** Enter a name for the key (e.g., "Sign In with Apple Key").
+       * Scroll down and select the checkbox for `Sign In with Apple`.
+       * Click the `Configure` button next to `Sign In with Apple`.
+       * Select the **Primary App ID** you created earlier.
+       * Click `Save`, then `Continue`, then `Register`.
+       * **Download the Key:** Immediately download the `.p8` key file. **This file is only available for download once.** Note the Key ID (available on the Keys page after creation) and your Team ID (available in your Apple Developer Account settings).
+
+    6. **Generate the Client Secret (JWT):**
+       Apple requires a JSON Web Token (JWT) to be generated dynamically using the downloaded `.p8` key, the Key ID, and your Team ID. This JWT serves as your `clientSecret`.
+
+       You can use the guide below from [Apple's documentation](https://developer.apple.com/documentation/accountorganizationaldatasharing/creating-a-client-secret) to understand how to generate this client secret. You can also use our built in generator [below](#generate-apple-client-secret-jwt) to generate the client secret JWT required for 'Sign in with Apple'.
+  </Step>
+
+  <Step>
+    ### Configure the provider
+
+    To configure the provider, you need to add it to the `socialProviders` option of the auth instance.
+
+    You also need to add `https://appleid.apple.com` to the `trustedOrigins` array in your auth instance configuration to allow communication with Apple's authentication servers.
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+
+    export const auth = betterAuth({
+        socialProviders: {
+            apple: { // [!code highlight]
+                clientId: process.env.APPLE_CLIENT_ID as string, // [!code highlight]
+                clientSecret: process.env.APPLE_CLIENT_SECRET as string, // [!code highlight]
+                // Optional
+                appBundleIdentifier: process.env.APPLE_APP_BUNDLE_IDENTIFIER as string, // [!code highlight]
+            }, // [!code highlight]
+        },
+        // Add appleid.apple.com to trustedOrigins for Sign In with Apple flows
+        trustedOrigins: ["https://appleid.apple.com"], // [!code highlight]
+    })
+    ```
+
+    On native iOS, it doesn't use the service ID but the app ID (bundle ID) as client ID, so if using the service ID as `clientId` in `signIn.social` with `idToken`, it throws an error: `JWTClaimValidationFailed: unexpected "aud" claim value`. So you need to provide the `appBundleIdentifier` when you want to sign in with Apple using the ID Token.
+  </Step>
+</Steps>
+
+## Usage
+
+### Sign In with Apple
+
+To sign in with Apple, you can use the `signIn.social` function provided by the client. The `signIn` function takes an object with the following properties:
+
+* `provider`: The provider to use. It should be set to `apple`.
+
+```ts title="auth-client.ts"  /
+import { createAuthClient } from "better-auth/client"
+const authClient =  createAuthClient()
+
+const signIn = async () => {
+    const data = await authClient.signIn.social({
+        provider: "apple"
+    })
+}
+```
+
+### Sign In with Apple With ID Token
+
+To sign in with Apple using the ID Token, you can use the `signIn.social` function to pass the ID Token.
+
+This is useful when you have the ID Token from Apple on the client-side and want to use it to sign in on the server.
+
+<Callout>
+  If ID token is provided no redirection will happen, and the user will be signed in directly.
+</Callout>
+
+```ts title="auth-client.ts"
+await authClient.signIn.social({
+    provider: "apple",
+    idToken: {
+        token: // Apple ID Token,
+        nonce: // Nonce (optional)
+        accessToken: // Access Token (optional)
+    }
+})
+```
+
+## Generate Apple Client Secret (JWT)
+
+<GenerateAppleJwt />
+
+
+
+# authentication: Discord
+URL: /docs/authentication/discord
+Source: https://raw.githubusercontent.com/better-auth/better-auth/refs/heads/main/docs/content/docs/authentication/discord.mdx
+
+Discord provider setup and usage.
+        
+***
+
+title: Discord
+description: Discord provider setup and usage.
+----------------------------------------------
+
+<Steps>
+  <Step>
+    ### Get your Discord credentials
+
+    To use Discord sign in, you need a client ID and client secret. You can get them from the [Discord Developer Portal](https://discord.com/developers/applications).
+
+    Make sure to set the redirect URL to `http://localhost:3000/api/auth/callback/discord` for local development. For production, you should set it to the URL of your application. If you change the base path of the auth routes, you should update the redirect URL accordingly.
+  </Step>
+
+  <Step>
+    ### Configure the provider
+
+    To configure the provider, you need to import the provider and pass it to the `socialProviders` option of the auth instance.
+
+    ```ts title="auth.ts" 
+    import { betterAuth } from "better-auth"
+
+    export const auth = betterAuth({ 
+        socialProviders: {
+            discord: { // [!code highlight]
+                clientId: process.env.DISCORD_CLIENT_ID as string, // [!code highlight]
+                clientSecret: process.env.DISCORD_CLIENT_SECRET as string, // [!code highlight]
+            }, // [!code highlight]
+        },
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Sign In with Discord
+
+    To sign in with Discord, you can use the `signIn.social` function provided by the client. The `signIn` function takes an object with the following properties:
+
+    * `provider`: The provider to use. It should be set to `discord`.
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/cli

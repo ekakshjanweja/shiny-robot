@@ -1,0 +1,241 @@
+import "dart:convert";
+import "dart:io";
+import "package:better_auth_flutter/better_auth_flutter.dart";
+import "package:http/http.dart" as http;
+import "package:http_parser/http_parser.dart";
+import "package:mobile/src/core/api/enums/error_code.dart";
+import "package:mobile/src/core/api/enums/method_type.dart";
+import "package:mobile/src/core/api/enums/request_type.dart";
+import "package:mobile/src/core/api/models/api_failure.dart";
+import "package:mobile/src/core/api/models/multipart_body.dart";
+import "package:mobile/src/core/constants/config.dart";
+import "package:mobile/src/core/local_storage/kv_store.dart";
+
+class Api {
+  static final hc = http.Client();
+
+  static Future<(dynamic, ApiFailure?)> sendRequest(
+    String path, {
+    required MethodType method,
+    RequestType requestType = RequestType.json,
+    String? host,
+    Map<String, dynamic>? body,
+    Map<String, String>? headers,
+    Map<String, dynamic>? queryParameters,
+    MultipartBody? multipartBody,
+    int retry = 0,
+  }) async {
+    final isDelete = method == MethodType.delete;
+
+    headers ??= {};
+    queryParameters ??= {};
+    host = host ?? AppConfig.host;
+
+    switch (requestType) {
+      case RequestType.json:
+        headers.addAll({
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+        });
+        break;
+      case RequestType.multipart:
+        headers.addAll({"Accept": "application/json"});
+        break;
+    }
+
+    final Uri uri = Uri(
+      scheme: AppConfig.scheme,
+      host: host,
+      path: path,
+      queryParameters: queryParameters,
+      port: AppConfig.port,
+    );
+
+    final cookies = await BetterAuthFlutter.storage.getCookies(
+      Uri(scheme: AppConfig.scheme, host: AppConfig.host).toString(),
+    );
+
+    if (cookies.isNotEmpty) {
+      headers["Cookie"] = cookies
+          .map((cookie) => '${cookie.name}=${cookie.value}')
+          .join('; ');
+    }
+
+    final http.Response response;
+
+    try {
+      switch (method) {
+        case MethodType.get:
+          response = await hc.get(uri, headers: headers);
+          break;
+        case MethodType.post:
+          if (requestType == RequestType.multipart && multipartBody != null) {
+            final multipartRequest = http.MultipartRequest("POST", uri);
+
+            if (cookies.isNotEmpty) {
+              multipartRequest.headers["Cookie"] = cookies
+                  .map((c) => "${c.name}=${c.value}")
+                  .join("; ");
+            }
+
+            headers.forEach((key, value) {
+              if (key.toLowerCase() != 'content-type') {
+                multipartRequest.headers[key] = value;
+              }
+            });
+
+            multipartBody.fields.forEach(
+              (key, value) => multipartRequest.fields[key] = value.toString(),
+            );
+
+            for (var fileField in multipartBody.files) {
+              final MediaType? contentType = _getContentType(
+                fileField.file.path,
+              );
+
+              final file = await http.MultipartFile.fromPath(
+                fileField.field,
+                fileField.file.path,
+                filename:
+                    fileField.filename ?? fileField.file.path.split('/').last,
+                contentType: contentType,
+              );
+
+              multipartRequest.files.add(file);
+            }
+
+            final streamedResponse = await multipartRequest.send();
+            response = await http.Response.fromStream(streamedResponse);
+          } else {
+            response = await hc.post(
+              uri,
+              headers: headers,
+              body: jsonEncode(body),
+            );
+          }
+          break;
+        case MethodType.patch:
+          if (body != null) {
+            response = await hc.patch(
+              uri,
+              headers: headers,
+              body: jsonEncode(body),
+            );
+          } else {
+            response = await hc.patch(uri, headers: headers);
+          }
+          break;
+        case MethodType.delete:
+          response = await hc.delete(uri, headers: headers);
+          break;
+      }
+    } on SocketException catch (error) {
+      return (
+        null,
+        ApiFailure.fromErrorCode(
+          errorType: ErrorCode.unknownError,
+          message: error.message,
+        ),
+      );
+    } catch (error) {
+      return (
+        null,
+        ApiFailure.fromErrorCode(errorType: ErrorCode.unknownError),
+      );
+    }
+
+    switch (response.statusCode) {
+      case 200 || 201:
+        try {
+          final data = jsonDecode(response.body);
+          return (data, null);
+        } catch (e) {
+          return (
+            null,
+            ApiFailure.fromErrorCode(
+              errorType: ErrorCode.unknownError,
+              message: e.toString(),
+            ),
+          );
+        }
+      case 400:
+        final data = jsonDecode(response.body);
+        final message = data["message"] as String;
+
+        return (
+          null,
+          ApiFailure.fromErrorCode(
+            errorType: ErrorCode.invalidInput,
+            message: message,
+          ),
+        );
+      case 401:
+        if (isDelete) {
+          return (null, null);
+        }
+
+        await KVStore.clear();
+
+        return (
+          null,
+          ApiFailure.fromErrorCode(errorType: ErrorCode.unAuthorized),
+        );
+      case 404:
+        final data = jsonDecode(response.body);
+        final message = data["message"];
+
+        return (
+          null,
+          ApiFailure.fromErrorCode(
+            errorType: ErrorCode.unknownError,
+            message: message ?? "Not found.",
+          ),
+        );
+
+      case 500:
+        final data = jsonDecode(response.body);
+        final message = data["message"];
+
+        return (
+          null,
+          ApiFailure.fromErrorCode(
+            errorType: ErrorCode.internalServerError,
+            message: message,
+          ),
+        );
+      default:
+        final data = jsonDecode(response.body);
+        final message = data["message"];
+
+        return (
+          null,
+          ApiFailure.fromErrorCode(
+            errorType: ErrorCode.unknownError,
+            message: message ?? "Unknown error",
+          ),
+        );
+    }
+  }
+
+  /// Helper method to get the correct MediaType for audio files
+  static MediaType? _getContentType(String filePath) {
+    final extension = filePath.toLowerCase().split('.').last;
+
+    switch (extension) {
+      case 'wav':
+        return MediaType('audio', 'wav');
+      case 'mp3':
+        return MediaType('audio', 'mpeg');
+      case 'webm':
+        return MediaType('audio', 'webm');
+      case 'ogg':
+        return MediaType('audio', 'ogg');
+      case 'm4a':
+        return MediaType('audio', 'm4a');
+      case 'aac':
+        return MediaType('audio', 'aac');
+      default:
+        return MediaType('audio', 'wav'); // Default fallback
+    }
+  }
+}

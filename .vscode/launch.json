@@ -1,0 +1,40 @@
+{
+  // VS Code launch configurations for the Flutter mobile app.
+  // This file sets the working directory to the `mobile` package and
+  // provides Debug/Profile/Release and Attach configurations.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter: Launch (debug)",
+      "type": "dart",
+      "request": "launch",
+      "program": "${workspaceFolder}/mobile/lib/main.dart",
+      "args": ["--dart-define-from-file=.env"],
+      "cwd": "${workspaceFolder}/mobile"
+    },
+    {
+      "name": "Flutter: Launch (profile)",
+      "type": "dart",
+      "request": "launch",
+      "flutterMode": "profile",
+      "program": "${workspaceFolder}/mobile/lib/main.dart",
+      "args": ["--dart-define-from-file=.env"],
+      "cwd": "${workspaceFolder}/mobile"
+    },
+    {
+      "name": "Flutter: Launch (release)",
+      "type": "dart",
+      "request": "launch",
+      "flutterMode": "release",
+      "program": "${workspaceFolder}/mobile/lib/main.dart",
+      "args": ["--dart-define-from-file=.env"],
+      "cwd": "${workspaceFolder}/mobile"
+    },
+    {
+      "name": "Flutter: Attach to running app",
+      "type": "dart",
+      "request": "attach",
+      "cwd": "${workspaceFolder}/mobile"
+    }
+  ]
+}

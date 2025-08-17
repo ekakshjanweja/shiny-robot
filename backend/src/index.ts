@@ -1,0 +1,126 @@
+import { Hono } from "hono";
+import { AppBindings } from "./lib/types";
+import { loadConfig } from "./lib/config";
+import { cors } from "hono/cors";
+import authMiddleware from "./middlewares/auth.middleware";
+import { stt } from "./lib/stt";
+
+const app = new Hono<AppBindings>();
+
+loadConfig();
+
+app.use(
+  "*",
+  cors({
+    origin: "http://localhost:3000",
+    allowHeaders: ["Content-Type", "Authorization"],
+    allowMethods: ["POST", "GET", "OPTIONS"],
+    exposeHeaders: ["Content-Length"],
+    maxAge: 600,
+    credentials: true,
+  })
+);
+
+app.use("*", authMiddleware);
+
+app.on(["POST", "GET"], "/api/auth/*", (c) => {
+  const auth = c.get("auth");
+  if (!auth) {
+    return c.json({ error: "Auth instance not found" }, 500);
+  }
+  return auth.handler(c.req.raw);
+});
+
+app.post("/audio/stt", async (c) => {
+  const user = c.get("user");
+  const session = c.get("session");
+  const auth = c.get("auth");
+
+  if (!auth) {
+    return c.json({ error: "Auth instance not found" }, 500);
+  }
+
+  if (!user || !session) {
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+
+  try {
+    // Get the uploaded file from the request
+    const body = await c.req.parseBody();
+    const audioFile = body.audio as File;
+
+    // Validate that an audio file was uploaded
+    if (!audioFile || !(audioFile instanceof File)) {
+      return c.json({ message: "No audio file provided" }, 400);
+    }
+
+    // Validate file type (optional but recommended)
+    const validMimeTypes = [
+      "audio/wav",
+      "audio/mp3",
+      "audio/mpeg",
+      "audio/webm",
+      "audio/ogg",
+      "audio/m4a",
+    ];
+
+    if (!validMimeTypes.includes(audioFile.type)) {
+      console.log("Invalid file type", audioFile.type);
+
+      return c.json(
+        {
+          message:
+            "Invalid file type. Supported formats: WAV, MP3, WebM, OGG, M4A",
+          receivedType: audioFile.type,
+        },
+        400
+      );
+    }
+
+    // Validate file size (e.g., max 10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (audioFile.size > maxSize) {
+      return c.json(
+        {
+          message: `File too large. Maximum size is ${maxSize / (1024 * 1024)}MB`,
+          fileSize: audioFile.size,
+        },
+        400
+      );
+    }
+
+    // Convert the file to ArrayBuffer or Blob for processing
+    const audioBuffer = await audioFile.arrayBuffer();
+
+    const transcription = await stt({
+      file: audioBuffer,
+      mimeType: audioFile.type,
+    });
+
+    return c.json({
+      transcription,
+      message: "Audio file transcribed successfully",
+      fileName: audioFile.name,
+      fileSize: audioFile.size,
+      fileType: audioFile.type,
+    });
+  } catch (error) {
+    console.error("Error processing audio file:", error);
+    return c.json(
+      {
+        message: "Failed to process audio file",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
+  }
+});
+
+app.get("/", (c) => {
+  return c.text("Hello Hono!");
+});
+
+export default {
+  port: 8000,
+  fetch: app.fetch,
+};
